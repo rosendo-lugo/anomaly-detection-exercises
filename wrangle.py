@@ -112,9 +112,9 @@ def data_summary(df):
     summary['50%'] = desc['50%'].values
     summary['75%'] = desc['75%'].values
     summary['max'] = desc['max'].values
-    # summary['head(1)'] = df.loc[0].values
-    # summary['head(2)'] = df.loc[1].values
-    # summary['head(3)'] = df.loc[2].values
+    summary['first_value'] = df.loc[0].values
+    summary['second_value'] = df.loc[1].values
+    summary['third_value'] = df.loc[2].values
     
     # Return the summary DataFrame
     return summary
