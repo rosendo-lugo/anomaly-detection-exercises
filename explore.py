@@ -119,6 +119,7 @@ def explore_univariate_categorical(df, var):
     plt.figure(figsize=(2,2))
     sns.barplot(x=var, y='Count', data=frequency_table, color='lightseagreen')
     plt.title(var)
+    plt.xticks(rotation=45)
     plt.show()
     print(frequency_table)
 
