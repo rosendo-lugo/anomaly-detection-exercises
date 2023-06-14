@@ -330,6 +330,159 @@ def execute_outlier(df):
     
 #     return df
 
+# ----------------------------------------------------------------------------------
+# -----------------------------The start of Anomalies-------------------------------
+def one_user_df_prep(df, user):
+    """
+    Prepares a DataFrame for a specific user by filtering the data, converting the 
+    'date' column to datetime, and setting it as the index. The DataFrame is then 
+    sorted by the index, and the 'endpoint' column is resampled by day and counted.
+
+    Parameters:
+        df (pd.DataFrame): The original DataFrame, which should include a 'user_id' 
+                           and a 'date' column.
+        user (int or str): The user ID to filter the DataFrame by.
+
+    Returns:
+        pages_one_user (pd.Series): A Series where the index is the date and the 
+                                    value is the count of 'endpoint' for that day.
+    """
+    df = df[df.user_id == user].copy()
+    df.date = pd.to_datetime(df.date)
+    df = df.set_index(df.date)
+    df = df.sort_index()
+    pages_one_user = df['endpoint'].resample('d').count()
+    return pages_one_user
+
+# ----------------------------------------------------------------------------------
+def compute_pct_b(pages_one_user, span, k, user):
+    """
+    Computes the Exponential Moving Average (EMA), upper band, lower band, and 
+    percentage bandwidth (%b) for a given user's page visits over a specified span 
+    of time. The EMA, upper band, and lower band are calculated using a specified 
+    number of standard deviations.
+
+    Parameters:
+        pages_one_user (pd.Series): A Series where the index is the date and the 
+                                    value is the count of 'endpoint' for that day.
+        span (int): The span of the window for the EMA calculation, representing 
+                    the number of time periods (e.g., 7 for a week, 30 for a month).
+        k (int): The number of standard deviations to use when calculating the 
+                 upper and lower bands.
+        user (int or str): The user ID to be added to the resulting DataFrame.
+
+    Returns:
+        my_df (pd.DataFrame): A DataFrame containing the original page visit data, 
+                              the EMA (midband), the upper and lower bands (ub and lb), 
+                              the %b value (pct_b), and the user ID.
+    """
+    midband = pages_one_user.ewm(span=span).mean()
+    stdev = pages_one_user.ewm(span=span).std()
+    ub = midband + stdev*k
+    lb = midband - stdev*k
+    
+    my_df = pd.concat([pages_one_user, midband, ub, lb], axis=1)
+    my_df.columns = ['pages_one_user', 'midband', 'ub', 'lb']
+    
+    my_df['pct_b'] = (my_df['pages_one_user'] - my_df['lb'])/(my_df['ub'] - my_df['lb'])
+    my_df['user_id'] = user
+    return my_df
+
+# ----------------------------------------------------------------------------------
+def plot_bands(my_df, user):
+    """
+    Plots the number of pages visited by a user, the Exponential Moving Average (EMA or midband), 
+    and the upper and lower bands over time. 
+
+    Parameters:
+        my_df (pd.DataFrame): A DataFrame containing the original page visit data, 
+                              the EMA (midband), the upper and lower bounds (ub and lb), 
+                              the %b value (pct_b), and the user ID.
+        user (int or str): The user ID to be used in the plot's label.
+
+    Returns:
+        None. Displays a plot with the number of pages, EMA/midband, upper band, and lower band 
+        over time for the specified user.
+    """
+    fig, ax = plt.subplots(figsize=(12,8))
+    ax.plot(my_df.index, my_df.pages_one_user, label='Number of Pages, User: '+str(user))
+    ax.plot(my_df.index, my_df.midband, label = 'EMA/midband')
+    ax.plot(my_df.index, my_df.ub, label = 'Upper Band')
+    ax.plot(my_df.index, my_df.lb, label = 'Lower Band')
+    ax.legend(loc='best')
+    ax.set_ylabel('Number of Pages')
+    plt.show()
+
+# ----------------------------------------------------------------------------------
+def find_anomalies(df, user, span, k, plot=False):a
+    """
+    Finds anomalies in the number of pages visited by a user over a specified span 
+    of time. An anomaly is defined as a value that is above the upper band, which 
+    is calculated using the Exponential Moving Average (EMA or midband) and a 
+    specified number of standard deviations.
+
+    Parameters:
+        df (pd.DataFrame): The original DataFrame, which should include a 'user_id' 
+                           and a 'date' column.
+        user (int or str): The user ID to filter the DataFrame by.
+        span (int): The span of the window for the EMA calculation, representing 
+                    the number of time periods (e.g., 7 for a week, 30 for a month).
+        k (int): The number of standard deviations to use when calculating the 
+                      upper and lower bounds.
+        plot (bool, optional): Whether to display a plot of the number of pages, 
+                               EMA/midband, upper band, and lower band over time 
+                               for the specified user. Defaults to False.
+
+    Returns:
+        my_df (pd.DataFrame): A DataFrame containing the original page visit data, 
+                              the EMA (midband), the upper and lower bounds (ub and lb), 
+                              the %b value (pct_b), and the user ID. Only rows where 
+                              pct_b > 1 (indicating an anomaly) are included. If no 
+                              anomalies are found, the DataFrame will be empty.
+    """
+
+    pages_one_user = one_user_df_prep(df, user)
+    
+    my_df = compute_pct_b(pages_one_user, span, k, user)
+    
+    if plot:
+        plot_bands(my_df, user)
+    
+    return my_df[my_df.pct_b>1]
+
+# ----------------------------------------------------------------------------------
+def find_all_anomalies(df, span, k):
+    """
+    Finds anomalies for all users in the provided DataFrame over a specified span 
+    of time. An anomaly is defined as a value that is above the upper band, which 
+    is calculated using the Exponential Moving Average (EMA or midband) and a 
+    specified number of standard deviations.
+
+    Parameters:
+        df (pd.DataFrame): The original DataFrame, which should include a 'user_id' 
+                           and a 'date' column.
+        span (int): The span of the window for the EMA calculation, representing 
+                    the number of time periods (e.g., 7 for a week, 30 for a month).
+        k (int): The number of standard deviations to use when calculating the 
+                 upper and lower bounds.
+
+    Returns:
+        anomalies (pd.DataFrame): A DataFrame containing the anomalies for all users. 
+                                   Each row includes the original page visit data, 
+                                   the EMA (midband), the upper and lower bounds (ub and lb), 
+                                   the %b value (pct_b), and the user ID. Only rows where 
+                                   pct_b > 1 (indicating an anomaly) are included. If no 
+                                   anomalies are found for a user, no rows for that user 
+                                   will be included in the DataFrame.
+    """
+    anomalies = pd.DataFrame()
+
+    for u in df.user_id.unique():
+        one_user = find_anomalies(df, u, span, k)
+        anomalies = pd.concat([anomalies, one_user])
+
+    return anomalies
+# -----------------------------End of Anomalies-------------------------------------
 
 # ----------------------------------------------------------------------------------
 def get_split(df):
